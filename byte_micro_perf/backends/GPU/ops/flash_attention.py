@@ -175,4 +175,59 @@ try:
     
     OP_MAPPING["flash_attn_v3"] = FA3Op
 except:
+
+
+# import math
+# import torch
+# import torch_npu  # pip install torch-npu ；并确保模型/张量 .npu()
+# # 1) 准备 Q/K/V：先在 host 侧完成 RoPE（如有）与 GQA 映射，再放到 NPU
+# # q: (B, Sq, Hq, D), k_cache/v_cache: (B, Sk_max, Hkv, D)
+# # 当前 step 的有效长度
+# seqlen_q = q.size(1)        # 增量解码典型是 1
+# seqlen_kv = cache_lens      # 你的 (B,) 有效长度张量或 Python list
+
+# # 2) 取出本 step 需要参与注意力的 K/V 视图（含历史缓存）
+# # 这里假设 k_cache/v_cache 已经就地写入了最新 token（或在调用后写入也可）
+# k = k_cache[:, :seqlen_kv_max, ...]  # 若每个batch不同长，传 actual_seq_lengths_kv 去指示
+# v = v_cache[:, :seqlen_kv_max, ...]
+
+# # 3) 调整到 BNSD 布局
+# q_bnsd = q.permute(0, 2, 1, 3).contiguous()   # (B, Hq, Sq, D)
+# k_bnsd = k.permute(0, 2, 1, 3).contiguous()   # (B, Hkv, Sk, D)
+# v_bnsd = v.permute(0, 2, 1, 3).contiguous()   # (B, Hkv, Sk, D)
+
+# # 4) 窗口/因果：自回归通常 next_tokens=0；若要滑窗(left,right)，映射到 pre_tokens/next_tokens
+# L, R = window_size  # 你的参数；(-1,-1) 表示全局
+# if L is None or L < 0: pre_tokens = 2**31 - 1
+# else: pre_tokens = L
+# if R is None or R < 0: next_tokens = 2**31 - 1
+# else: next_tokens = R
+# if causal:
+#     next_tokens = 0  # 严格因果
+
+# # 5) 有效长度（注意 FIA 需要 host 侧 IntArray；可以传单值或按 batch 列表）
+# act_len_q  = [int(seqlen_q)] if isinstance(seqlen_q, int) else [int(seqlen_q.item())]
+# act_len_kv = [int(x) for x in (seqlen_kv.tolist() if torch.is_tensor(seqlen_kv) else seqlen_kv)]
+# seqlen_kv_max = max(act_len_kv)
+
+# # 6) 比例因子
+# scale = 1.0 / math.sqrt(q.size(-1)) if softmax_scale is None else float(softmax_scale)
+
+# # 7) 调用 FIA
+# out_bnsd, _lse = torch_npu.npu_fused_infer_attention_score(
+#     q_bnsd, k_bnsd, v_bnsd,
+#     actual_seq_lengths=act_len_q,
+#     actual_seq_lengths_kv=act_len_kv,
+#     num_heads=q_bnsd.size(1),
+#     num_key_value_heads=k_bnsd.size(1),
+#     input_layout="BNSD",
+#     scale_value=scale,
+#     pre_tokens=pre_tokens,
+#     next_tokens=next_tokens,
+#     # 可选项：atten_mask=...（bool/uint8），block_table=...（分页KV）
+# )
+
+# # 8) 还原到原来的 (B, Sq, Hq, D)
+# out = out_bnsd.permute(0, 2, 1, 3).contiguous()
+
     pass
