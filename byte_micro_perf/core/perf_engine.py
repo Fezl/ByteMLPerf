@@ -43,6 +43,74 @@ sys.path.insert(0, str(MICRO_PERF_DIR))
 from core.utils import logger, setup_logger
 from core.scheduler import Scheduler
 
+def _generate_profiler_dir_name(self, op_instance, process_id):
+    """
+    生成性能分析目录名称
+    
+    Args:
+        op_instance: 操作实例
+        process_id: 进程ID
+        
+    Returns:
+        str: 生成的目录名称
+    """
+    case_info = ""
+    
+    # 尝试从op_instance获取测试用例文件名
+    if hasattr(op_instance, 'args_dict') and '__file__' in op_instance.args_dict:
+        # 从参数中提取文件名（去掉路径和扩展名）
+        testcase_file = pathlib.Path(op_instance.args_dict['__file__']).stem
+        case_info += f"{testcase_file}_"
+    elif hasattr(op_instance, '__class__'):
+        # 使用操作类名作为备选
+        op_name = op_instance.__class__.__name__
+        # 移除可能的后缀如Op等，使名称更简洁
+        op_name = op_name.replace('Op', '').lower()
+        case_info += f"{op_name}_"
+    
+    if hasattr(op_instance, 'args_dict'):
+        args = op_instance.args_dict
+        
+        # 添加测试用例索引（如果存在）
+        if 'index' in args:
+            case_info += f"case_{args['index']}_"
+        
+        # 添加关键参数以区分测试用例
+        # dtype相关参数
+        for dtype_key in ['dtype', 'dst_dtype']:
+            if dtype_key in args:
+                case_info += f"{dtype_key}_{args[dtype_key]}_"
+        
+        # 大小相关参数
+        for size_key in ['batch_size', 'num_tokens', 'hidden_size']:
+            if size_key in args:
+                case_info += f"{size_key}_{args[size_key]}_"
+        
+        # 模式相关参数（针对LLM测试）
+        if 'mode' in args:
+            case_info += f"mode_{args['mode']}_"
+        
+        # 维度相关参数
+        if 'dim_size' in args:
+            case_info += f"dim_{args['dim_size']}_"
+        
+        # head相关参数（针对LLM测试）
+        for head_key in ['q_head_num', 'kv_head_num', 'head_dim']:
+            if head_key in args:
+                case_info += f"{head_key}_{args[head_key]}_"
+        
+        # world_size参数（针对分布式操作）
+        if 'world_size' in args:
+            case_info += f"ws_{args['world_size']}_"
+    
+    # 清理末尾的下划线
+    case_info = case_info.rstrip('_')
+    
+    # 如果没有提取到参数信息，则使用默认命名
+    if case_info:
+        return f"{case_info}_{process_id}"
+    else:
+        return f"{process_id}"
 
 def parse_task(task_dir, task):
     task_dir = pathlib.Path(task_dir).absolute()
@@ -60,6 +128,9 @@ def parse_task(task_dir, task):
                         removed_keys.append(key)
                 for removed_key in removed_keys:
                     argument_case.pop(removed_key)
+
+                # 添加文件路径信息到参数中（只保留文件名，不包括后缀）
+                argument_case["__file__"] = task_file.stem
 
                 keys = list(argument_case.keys())
                 values = list(argument_case.values())
